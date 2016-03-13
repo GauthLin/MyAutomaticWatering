@@ -65,14 +65,14 @@ class Watering:
         self.configMenu = {
             0: (self.mainMenu[self.HOME_MENU], "Demarrer/Arreter"),
             1: (self.display_menu_watering_days, "Jours d'arro."),
-            2: (self.display_menu_start_time, "Heure d'arro."),
+            2: (self.display_menu_start_time, "Heure de debut"),
             3: (self.display_menu_duration, "Duree d'arro."),
             4: (self.display_menu_mode, "Mode d'arro.")
         }
 
         # LCD setup and startup
         self.last_activity = datetime.datetime.today()
-        self.time_before_switch_off = 30 * 5  # In seconds
+        self.time_before_switch_off = 60 * 5  # In seconds
         self.lcd = CharLCD(pin_backlight=18, backlight_mode=BacklightMode.active_high, pin_rw=None)
         self.lcd.backlight = True
         self.lcd.cursor_pos = (0, 0)
@@ -358,7 +358,7 @@ class Watering:
 
     def display_menu_duration(self):
         self.display_2_lcd([
-            '|Arrosage pendant    ',
+            'Arrosage pendant     ',
             '{:^20}'.format(str(self.durationOfWatering) + ' min'),
             None,
             '<Retour        Home>'
