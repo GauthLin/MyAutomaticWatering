@@ -8,6 +8,7 @@
 #                                #
 #  Linard Gauthier               #
 ##################################
+from __future__ import print_function, division, absolute_import, unicode_literals
 
 import param
 import time
@@ -15,6 +16,12 @@ import datetime
 import RPi.GPIO as GPIO
 import math
 import multiprocessing
+
+# LCD import
+from RPLCD import CharLCD
+from RPLCD import Alignment, CursorMode, ShiftMode
+from RPLCD import cursor, cleared
+from RPLCD import BacklightMode
 
 
 class Watering:
@@ -56,29 +63,86 @@ class Watering:
         self.DURATION_OF_WATERING_CONFIG_MENU = 3
         self.MODE_SELECTION_CONFIG_MENU = 4
         self.configMenu = {
-            0: (self.mainMenu[self.HOME_MENU], "Démarrer/Arrêter"),
+            0: (self.mainMenu[self.HOME_MENU], "Demarrer/Arreter"),
             1: (self.display_menu_watering_days, "Jours d'arro."),
             2: (self.display_menu_start_time, "Heure d'arro."),
-            3: (self.display_menu_duration, "Durée d'arro."),
+            3: (self.display_menu_duration, "Duree d'arro."),
             4: (self.display_menu_mode, "Mode d'arro.")
         }
+
+        # LCD setup and startup
+        self.last_activity = datetime.datetime.today()
+        self.time_before_switch_off = 30 * 5  # In seconds
+        self.lcd = CharLCD(pin_backlight=18, backlight_mode=BacklightMode.active_high, pin_rw=None)
+        self.lcd.backlight = True
+        self.lcd.cursor_pos = (0, 0)
+        self.lcd.write_string('Demarrage en cours..')
+        self.lcd.cursor_pos = (1, 0)
+        self.lcd.write_string('Initialisation des')
+        self.lcd.cursor_pos = (2, 0)
+        self.lcd.write_string('parametres ')
+        self.lcd.cursor_mode = CursorMode.blink
 
         # Setup the GPIOs
         self.setup_gpio(param.GPIO)
 
         # Test if all LEDs work
+        self.test_setup()
+
+        # Clean the lcd
+        self.lcd.clear()
+        self.lcd.cursor_mode = CursorMode.hide
+
+        # Put the relay to the off position
+        GPIO.output(param.GPIO['relay'][1], GPIO.LOW)
+        self.start()
+
+    # GPIO configuration
+    def setup_gpio(self, array):
+        GPIO.setmode(GPIO.BOARD)
+
+        # v[0] contains the key
+        # v[1] contains the value
+        for v in array.items():
+            if isinstance(v[1], dict):
+                self.setup_gpio(v[1])
+            else:
+                if v[1][0].upper() == "IN":
+                    GPIO.setup(v[1][1], GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+                    # Define callback method
+                    if v[0] in ['left', 'right']:
+                        GPIO.add_event_detect(v[1][1], GPIO.FALLING, callback=self.left_right_btn_pressed,
+                                              bouncetime=500)
+                    elif v[0] in ['up', 'bottom']:
+                        GPIO.add_event_detect(v[1][1], GPIO.FALLING, callback=self.up_bottom_btn_pressed,
+                                              bouncetime=500)
+                    elif v[0] == 'emergency':
+                        GPIO.add_event_detect(v[1][1], GPIO.FALLING, callback=self.emergency_btn_pressed,
+                                              bouncetime=2000)
+                else:
+                    GPIO.setup(v[1][1], GPIO.OUT)
+
+    # Test if all LEDs work
+    def test_setup(self):
         GPIO.output(param.GPIO['led']['green'][1], GPIO.HIGH)
         GPIO.output(param.GPIO['led']['red'][1], GPIO.HIGH)
-        time.sleep(2)
+        time.sleep(5)
         GPIO.output(param.GPIO['led']['green'][1], GPIO.LOW)
         GPIO.output(param.GPIO['led']['red'][1], GPIO.LOW)
 
-        self.start()
-
     def start(self):
         while True:
-            # Displays the menu
-            self.display_menu()
+            date_diff = datetime.datetime.today() - self.last_activity
+            if self.lcd.display_enabled and date_diff.seconds > self.time_before_switch_off:
+                self.switch_off_lcd()
+                self.currentMenuSelected = self.HOME_MENU
+            elif not self.lcd.display_enabled and date_diff.seconds < self.time_before_switch_off:
+                self.switch_on_lcd()
+                self.display_menu()
+            else:
+                # Displays the menu only if the screen is on
+                self.display_menu()
 
             # Calculates if it has to water or not
             # If mode ON -> start watering
@@ -93,55 +157,39 @@ class Watering:
             # Stops the watering after duration specified
             elif self.ongoingWatering and self.endWateringDate < datetime.datetime.today():
                 self.stop_watering()
-            time.sleep(1)
-
-    # GPIO configuration
-    def setup_gpio(self, array):
-        GPIO.setmode(GPIO.BCM)
-
-        # v[0] contains the key
-        # v[1] contains the value
-        for v in array.items():
-            if isinstance(v[1], dict):
-                self.setup_gpio(v[1])
-            else:
-                if v[1][0].upper() == "IN":
-                    GPIO.setup(v[1][1], GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
-
-                    # Define callback method
-                    if v[0] in ['left', 'right']:
-                        GPIO.add_event_detect(v[1][1], GPIO.FALLING, callback=self.left_right_btn_pressed, bouncetime=500)
-                    elif v[0] in ['up', 'bottom']:
-                        GPIO.add_event_detect(v[1][1], GPIO.FALLING, callback=self.up_bottom_btn_pressed, bouncetime=500)
-                    elif v[0] == 'emergency':
-                        GPIO.add_event_detect(v[1][1], GPIO.FALLING, callback=self.emergency_btn_pressed, bouncetime=2000)
-                else:
-                    GPIO.setup(v[1][1], GPIO.OUT)
+            time.sleep(.5)
 
     # Changes the currentMenuSelected
     def left_right_btn_pressed(self, channel):
+        if not self.lcd.display_enabled:
+            self.last_activity = datetime.datetime.today()
+            return
+        self.last_activity = datetime.datetime.today()
+
         if self.emergency_on:
             return
 
         if param.GPIO['btn']['right'][1] == channel:
-            if self.emergency_on:
-                return
-
-            self.currentMenuSelected = self.currentMenuSelected + 1 if self.currentMenuSelected < len(self.mainMenu) - 2 else 0
+            self.currentMenuSelected = self.currentMenuSelected + 1 if self.currentMenuSelected < len(
+                self.mainMenu) - 2 else 0
         elif param.GPIO['btn']['left'][1] == channel:
-            if self.emergency_on:
-                return
-
             self.currentMenuSelected = self.currentMenuSelected - 1 if self.currentMenuSelected > 0 else 0
 
     # Changes the value of the corresponding currentMenuSelected
     def up_bottom_btn_pressed(self, channel):
+        if not self.lcd.display_enabled:
+            self.last_activity = datetime.datetime.today()
+            return
+        self.last_activity = datetime.datetime.today()
+
         # Change the current selected config menu
         if self.currentMenuSelected == self.CONFIG_MENU:
             if param.GPIO['btn']['up'][1] == channel:
-                self.configMenuSelected = self.configMenuSelected - 1 if self.configMenuSelected > 0 else len(self.configMenu) - 1
+                self.configMenuSelected = self.configMenuSelected - 1 if self.configMenuSelected > 0 else len(
+                    self.configMenu) - 1
             if param.GPIO['btn']['bottom'][1] == channel:
-                self.configMenuSelected = self.configMenuSelected + 1 if self.configMenuSelected < len(self.configMenu) - 1 else 0
+                self.configMenuSelected = self.configMenuSelected + 1 if self.configMenuSelected < len(
+                    self.configMenu) - 1 else 0
 
         # Adds or removes days between watering
         elif self.configMenuSelected == self.DAYS_OF_WATERING_CONFIG_MENU:
@@ -173,6 +221,8 @@ class Watering:
 
     # Stops or start the emergency
     def emergency_btn_pressed(self, channel):
+        self.last_activity = datetime.datetime.today()
+
         # Stops
         if self.emergency_on:
             if self.emergency_process.is_alive():
@@ -228,67 +278,91 @@ class Watering:
     def display_menu(self):
         self.mainMenu.get(self.currentMenuSelected)()
 
+    # Display the menu to the LCD
+    def display_2_lcd(self, lines):
+        blank_line = '{:^20}'.format(' ')
+
+        for key, value in enumerate(lines):
+            self.lcd.cursor_pos = (key, 0)
+            if value:
+                self.lcd.write_string(value)
+            else:
+                self.lcd.write_string(blank_line)
+
     # Displays the home menu
     def display_menu_home(self):
         self.configMenuSelected = 0
 
         today = datetime.datetime.today()
-        print('----------------------')
-        print('|' + '{:^20}'.format(today.strftime("%d/%m/%Y %H:%M")) + '|')
-        print('|' + '{:^20}'.format('Mode ' + self.modeList[self.currentModeSelected]) + '|')
+
+        line1 = '{:^20}'.format(today.strftime("%d/%m/%Y %H:%M"))
+        line2 = '{:^20}'.format('Mode ' + self.modeList[self.currentModeSelected])
+        line4 = None
 
         # If mode is ON
         if self.modeList[self.currentModeSelected] == "ON":
-            print('|! Arrosage infini ! |')
-            print('|                    |')
+            line3 = '! Arrosage infini ! '
         # If mode is OFF
         elif self.modeList[self.currentModeSelected] == "OFF":
-            print('|Arrosage désactivé  |')
-            print('|                    |')
+            line3 = 'Arrosage desactive  '
         # If mode is AUTO
         elif self.ongoingWatering:
-            print('|Arrosage en cours   |')
-            print('|' + '{:^20}'.format(self.end_watering_in()) + '|')
+            line3 = 'Arrosage en cours   '
+            line4 = '{:^20}'.format(self.end_watering_in())
         else:
-            print('|Proch. arro. dans:  |')
-            print('|' + '{:^20}'.format(self.next_watering_in()) + '|')
-        print('----------------------')
+            line3 = 'Proch. arro. dans:  '
+            line4 = '{:^20}'.format(self.next_watering_in())
+
+        self.display_2_lcd([line1, line2, line3, line4])
 
     # Displays the details of the selected configuration
     def display_config_details(self):
         self.configMenu[self.configMenuSelected][0]()
 
         if self.configMenuSelected == self.START_STOP_WATERING_CONFIG_MENU:
-            self.currentMenuSelected = self.HOME_MENU
-
             if self.ongoingWatering:
                 self.stop_watering()
+                self.display_2_lcd([
+                    None,
+                    '{:^20}'.format("Arret de l'arrosage"),
+                    '{:^20}'.format("en cours..."),
+                    None
+                ])
             else:
                 self.start_watering()
+                self.display_2_lcd([
+                    None,
+                    '{:^20}'.format('Demarrage de'),
+                    '{:^20}'.format("l'arrosage en cours..."),
+                    None
+                ])
+
+            time.sleep(5)
+            self.currentMenuSelected = self.HOME_MENU
 
     def display_menu_watering_days(self):
-        print('----------------------')
-        print('|Arrosage tous les   |')
-        print('|' + '{:^20}'.format(str(self.daysBetweenWatering) + ' jours') + '|')
-        print('|                    |')
-        print('|<Retour        Home>|')
-        print('----------------------')
+        self.display_2_lcd([
+            'Arrosage tous les   ',
+            '{:^20}'.format(str(self.daysBetweenWatering) + ' jours'),
+            None,
+            '<Retour        Home>'
+        ])
 
     def display_menu_start_time(self):
-        print('----------------------')
-        print('|Arrosage à partir de|')
-        print('|' + '{:^20}'.format(self.display_time()) + '|')
-        print('|                    |')
-        print('|<Retour        Home>|')
-        print('----------------------')
+        self.display_2_lcd([
+            'Arrosage a partir de',
+            '{:^20}'.format(self.display_time()),
+            None,
+            '<Retour        Home>'
+        ])
 
     def display_menu_duration(self):
-        print('----------------------')
-        print('|Arrosage pendant    |')
-        print('|' + '{:^20}'.format(str(self.durationOfWatering) + ' min') + '|')
-        print('|                    |')
-        print('|<Retour        Home>|')
-        print('----------------------')
+        self.display_2_lcd([
+            '|Arrosage pendant    ',
+            '{:^20}'.format(str(self.durationOfWatering) + ' min'),
+            None,
+            '<Retour        Home>'
+        ])
 
     def display_menu_mode(self):
         mode = ""
@@ -298,15 +372,14 @@ class Watering:
             else:
                 mode += " " + val.lower() + " "
 
-        print('----------------------')
-        print('|Mode d\'arrosage     |')
-        print('|' + '{:^20}'.format(mode) + '|')
-        print('|                    |')
-        print('|<Retour        Home>|')
-        print('----------------------')
+        self.display_2_lcd([
+            'Mode d\'arrosage     ',
+            '{:^20}'.format(mode),
+            None,
+            '<Retour        Home>'
+        ])
 
     def display_config_menu(self):
-        print('----------------------')
         if 1 <= self.configMenuSelected <= len(self.configMenu) - 2:
             config_menu = [self.configMenuSelected - 1, self.configMenuSelected, self.configMenuSelected + 1]
         elif self.configMenuSelected == len(self.configMenu) - 1:
@@ -314,21 +387,23 @@ class Watering:
         else:
             config_menu = [0, 1, 2]
 
+        lines = []
         for i in config_menu:
             if i == self.configMenuSelected:
-                print('|' + '{:-^20}'.format('>' + self.configMenu[i][1] + '<') + '|')
+                lines.append('{:-^20}'.format('>' + self.configMenu[i][1] + '<'))
             else:
-                print('|{:^20}'.format(self.configMenu[i][1]) + '|')
-        print('|<Home        Select>|')
-        print('----------------------')
+                lines.append('{:^20}'.format(self.configMenu[i][1]))
+        lines.append('<Home        Select>')
+
+        self.display_2_lcd(lines)
 
     def display_emergency(self):
-        print('----------------------')
-        print('|' + '{:^20}'.format('Urgence activée !') + '|')
-        print('|                    |')
-        print('|' + '{:^20}'.format('Système désactivé') + '|')
-        print('|                    |')
-        print('----------------------')
+        self.display_2_lcd([
+            '{:^20}'.format('Urgence activee !'),
+            None,
+            '{:^20}'.format('Systeme desactive'),
+            None
+        ])
 
     # Returns True if it's necessary to watering
     # Returns False if not
@@ -394,6 +469,7 @@ class Watering:
         if self.emergency_on:
             return
 
+        GPIO.output(param.GPIO['relay'][1], GPIO.HIGH)
         self.ongoingWatering = True
         self.lastWatering = datetime.datetime.today()
         self.endWateringDate = self.lastWatering + datetime.timedelta(minutes=self.durationOfWatering)
@@ -420,6 +496,7 @@ class Watering:
 
             self.watering_process = None
 
+        GPIO.output(param.GPIO['relay'][1], GPIO.LOW)
         self.ongoingWatering = False
         GPIO.output(param.GPIO['led']['green'][1], GPIO.LOW)
 
@@ -449,6 +526,15 @@ class Watering:
             time.sleep(1)
             GPIO.output(param.GPIO['led']['red'][1], GPIO.LOW)
             time.sleep(1)
+
+    def switch_off_lcd(self):
+        self.lcd.display_enabled = False
+        self.lcd.backlight_enabled = False
+
+    def switch_on_lcd(self):
+        self.lcd.display_enabled = True
+        self.lcd.backlight_enabled = True
+
 
 if __name__ == '__main__':
     Watering()
