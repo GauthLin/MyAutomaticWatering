@@ -209,7 +209,7 @@ class Watering:
         elif self.configMenuSelected == self.DURATION_OF_WATERING_CONFIG_MENU:
             if param.GPIO['btn']['up'][1] == channel:
                 self.durationOfWatering += 10
-            if param.GPIO['btn']['bottom'][1] == channel:
+            if param.GPIO['btn']['bottom'][1] == channel and self.durationOfWatering > 10:
                 self.durationOfWatering -= 10
 
         # Changes the current mode
