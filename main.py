@@ -16,6 +16,7 @@ import datetime
 import RPi.GPIO as GPIO
 import math
 import multiprocessing
+import subprocess
 
 # LCD import
 from RPLCD import CharLCD
@@ -62,12 +63,22 @@ class Watering:
         self.START_WATERING_AT_CONFIG_MENU = 2
         self.DURATION_OF_WATERING_CONFIG_MENU = 3
         self.MODE_SELECTION_CONFIG_MENU = 4
+        self.CHANGE_DAY_DATE_CONFIG_MENU = 5
+        self.CHANGE_MONTH_DATE_CONFIG_MENU = 6
+        self.CHANGE_YEAR_DATE_CONFIG_MENU = 7
+        self.CHANGE_HOUR_DATE_CONFIG_MENU = 8
+        self.CHANGE_MINUTE_DATE_CONFIG_MENU = 9
         self.configMenu = {
             0: (self.mainMenu[self.HOME_MENU], "Demarrer/Arreter"),
             1: (self.display_menu_watering_days, "Jours d'arro."),
             2: (self.display_menu_start_time, "Heure de debut"),
             3: (self.display_menu_duration, "Duree d'arro."),
-            4: (self.display_menu_mode, "Mode d'arro.")
+            4: (self.display_menu_mode, "Mode d'arro."),
+            5: (self.display_menu_change_day_date, 'Changer le jour'),
+            6: (self.display_menu_change_month_date, 'Changer le mois'),
+            7: (self.display_menu_change_year_date, 'Changer l\'annee'),
+            8: (self.display_menu_change_hour_date, 'Changer l\'heure'),
+            9: (self.display_menu_change_minute_date, 'Changer les min')
         }
 
         # LCD setup and startup
@@ -99,6 +110,7 @@ class Watering:
 
     # GPIO configuration
     def setup_gpio(self, array):
+        GPIO.setwarnings(False)
         GPIO.setmode(GPIO.BOARD)
 
         # v[0] contains the key
@@ -218,6 +230,47 @@ class Watering:
                 self.currentModeSelected = self.currentModeSelected + 1 if self.currentModeSelected < 2 else 0
             if param.GPIO['btn']['bottom'][1] == channel:
                 self.currentModeSelected = self.currentModeSelected - 1 if self.currentModeSelected > 0 else 2
+
+        # Change the current datetime of the OS
+        elif self.configMenuSelected == self.CHANGE_DAY_DATE_CONFIG_MENU:
+            if param.GPIO['btn']['up'][1] == channel:
+                subprocess.call(["sudo", "date", "-s", "+1 day"])
+            elif param.GPIO['btn']['bottom'][1] == channel:
+                subprocess.call(["sudo", "date", "-s", "-1 day"])
+
+            self.last_activity = datetime.datetime.today()
+
+        elif self.configMenuSelected == self.CHANGE_MONTH_DATE_CONFIG_MENU:
+            if param.GPIO['btn']['up'][1] == channel:
+                subprocess.call(["sudo", "date", "-s", "+1 month"])
+            elif param.GPIO['btn']['bottom'][1] == channel:
+                subprocess.call(["sudo", "date", "-s", "-1 month"])
+
+            self.last_activity = datetime.datetime.today()
+
+        elif self.configMenuSelected == self.CHANGE_YEAR_DATE_CONFIG_MENU:
+            if param.GPIO['btn']['up'][1] == channel:
+                subprocess.call(["sudo", "date", "-s", "+1 year"])
+            elif param.GPIO['btn']['bottom'][1] == channel:
+                subprocess.call(["sudo", "date", "-s", "-1 year"])
+
+            self.last_activity = datetime.datetime.today()
+
+        elif self.configMenuSelected == self.CHANGE_HOUR_DATE_CONFIG_MENU:
+            if param.GPIO['btn']['up'][1] == channel:
+                subprocess.call(["sudo", "date", "-s", "+1 hour"])
+            elif param.GPIO['btn']['bottom'][1] == channel:
+                subprocess.call(["sudo", "date", "-s", "-1 hour"])
+
+            self.last_activity = datetime.datetime.today()
+
+        elif self.configMenuSelected == self.CHANGE_MINUTE_DATE_CONFIG_MENU:
+            if param.GPIO['btn']['up'][1] == channel:
+                subprocess.call(["sudo", "date", "-s", "+1 minute"])
+            elif param.GPIO['btn']['bottom'][1] == channel:
+                subprocess.call(["sudo", "date", "-s", "-1 minute"])
+
+            self.last_activity = datetime.datetime.today()
 
     # Stops or start the emergency
     def emergency_btn_pressed(self, channel):
@@ -376,6 +429,81 @@ class Watering:
             'Mode d\'arrosage     ',
             '{:^20}'.format(mode),
             None,
+            '<Retour        Home>'
+        ])
+
+    def display_menu_change_day_date(self):
+        today = datetime.datetime.today()
+        day = today.strftime("%d")
+        month = today.strftime("%m")
+        year = today.strftime("%Y")
+        hour = today.strftime("%H")
+        minute = today.strftime("%M")
+
+        self.display_2_lcd([
+            'Changement du jour',
+            '{:^20}'.format('>' + day + '<' + '/' + month + '/' + year),
+            '{:^20}'.format(hour + ':' + minute),
+            '<Retour        Home>'
+        ])
+
+    def display_menu_change_month_date(self):
+        today = datetime.datetime.today()
+        day = today.strftime("%d")
+        month = today.strftime("%m")
+        year = today.strftime("%Y")
+        hour = today.strftime("%H")
+        minute = today.strftime("%M")
+
+        self.display_2_lcd([
+            'Changement du mois',
+            '{:^20}'.format(day + '/' + '>' + month + '<' + '/' + year),
+            '{:^20}'.format(hour + ':' + minute),
+            '<Retour        Home>'
+        ])
+
+    def display_menu_change_year_date(self):
+        today = datetime.datetime.today()
+        day = today.strftime("%d")
+        month = today.strftime("%m")
+        year = today.strftime("%Y")
+        hour = today.strftime("%H")
+        minute = today.strftime("%M")
+
+        self.display_2_lcd([
+            'Changement de l\'an',
+            '{:^20}'.format(day + '/' + month + '/' + '>' + year + '<'),
+            '{:^20}'.format(hour + ':' + minute),
+            '<Retour        Home>'
+        ])
+
+    def display_menu_change_hour_date(self):
+        today = datetime.datetime.today()
+        day = today.strftime("%d")
+        month = today.strftime("%m")
+        year = today.strftime("%Y")
+        hour = today.strftime("%H")
+        minute = today.strftime("%M")
+
+        self.display_2_lcd([
+            'Changement de l\'heure',
+            '{:^20}'.format(day + '/' + month + '/' + year),
+            '{:^20}'.format('>' + hour + '<' + ':' + minute),
+            '<Retour        Home>'
+        ])
+
+    def display_menu_change_minute_date(self):
+        today = datetime.datetime.today()
+        day = today.strftime("%d")
+        month = today.strftime("%m")
+        year = today.strftime("%Y")
+        hour = today.strftime("%H")
+        minute = today.strftime("%M")
+
+        self.display_2_lcd([
+            'Changement des min',
+            '{:^20}'.format(day + '/' + month + '/' + year),
+            '{:^20}'.format(hour + ':' + '>' + minute + '<'),
             '<Retour        Home>'
         ])
 
