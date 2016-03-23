@@ -8,6 +8,7 @@
 #                                #
 #  Linard Gauthier               #
 ##################################
+
 from __future__ import print_function, division, absolute_import, unicode_literals
 
 import param
@@ -27,7 +28,7 @@ from RPLCD import BacklightMode
 
 class Watering:
     def __init__(self):
-        # Watering
+        # Watering variables
         self.daysBetweenWatering = 4  # Number of days between one watering
         self.startTime = [23, 00]  # [hh, mm]
         self.durationOfWatering = 60  # in minutes
@@ -536,10 +537,9 @@ class Watering:
     # Returns True if it's necessary to watering
     # Returns False if not
     def has_to_water(self):
-        today = datetime.datetime.today()
-        time_dif = self.get_next_watering_date() - today
+        time_dif = self.get_next_watering_date() - datetime.datetime.today()
 
-        if math.ceil(time_dif.seconds / 60) == 0:
+        if math.ceil(time_dif.total_seconds() / 60) <= 0:
             return True
 
         return False
@@ -578,10 +578,10 @@ class Watering:
         days = time_dif.days
 
         if days > 0:
-            return str(days) + "j " + str(math.ceil(seconds / 3600)) + "h"
+            return str(days) + "j " + str(math.floor(seconds / 3600)) + "h"
         elif hours > 0:
             hours = math.floor(time_dif.seconds / 3600)
-            return str(hours) + "h" + '%02d' % math.ceil((seconds - hours * 3600) / 60)
+            return str(hours) + "h" + '%02d' % math.floor((seconds - hours * 3600) / 60)
         elif minutes > 0:
             return str(minutes) + " min"
         else:
