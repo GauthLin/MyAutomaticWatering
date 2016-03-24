@@ -70,7 +70,7 @@ class Watering:
         self.CHANGE_HOUR_DATE_CONFIG_MENU = 8
         self.CHANGE_MINUTE_DATE_CONFIG_MENU = 9
         self.configMenu = {
-            0: (self.mainMenu[self.HOME_MENU], "Demarrer/Arreter"),
+            0: (self.display_menu_start_stop_watering, "Demarrer/Arreter"),
             1: (self.display_menu_watering_days, "Jours d'arro."),
             2: (self.display_menu_start_time, "Heure de debut"),
             3: (self.display_menu_duration, "Duree d'arro."),
@@ -339,7 +339,7 @@ class Watering:
         for key, value in enumerate(lines):
             self.lcd.cursor_pos = (key, 0)
             if value:
-                self.lcd.write_string(value)
+                self.lcd.write_string('{:20}'.format(value))
             else:
                 self.lcd.write_string(blank_line)
 
@@ -373,13 +373,31 @@ class Watering:
     def display_config_details(self):
         self.configMenu[self.configMenuSelected][0]()
 
-        if self.configMenuSelected == self.START_STOP_WATERING_CONFIG_MENU:
-            if self.ongoingWatering:
+    def display_menu_start_stop_watering(self):
+        if self.ongoingWatering:
+            # If the ON mode is selected -> cant stop the watering
+            if self.modeList[self.currentModeSelected] == 'ON':
+                self.display_2_lcd([
+                    "Impossible d'arreter",
+                    "l'arrosage en cours",
+                    '{:^20}'.format("Mode ON active"),
+                    None
+                ])
+            else:
                 self.stop_watering()
                 self.display_2_lcd([
                     None,
                     '{:^20}'.format("Arret de l'arrosage"),
                     '{:^20}'.format("en cours..."),
+                    None
+                ])
+        else:
+            # If the OFF mode is selected -> cant start the watering
+            if self.modeList[self.currentModeSelected] == 'OFF':
+                self.display_2_lcd([
+                    "Impossible d'allumer",
+                    "l'arrosage",
+                    '{:^20}'.format("Mode OFF active"),
                     None
                 ])
             else:
@@ -391,8 +409,8 @@ class Watering:
                     None
                 ])
 
-            time.sleep(5)
-            self.currentMenuSelected = self.HOME_MENU
+        time.sleep(5)
+        self.currentMenuSelected = self.HOME_MENU
 
     def display_menu_watering_days(self):
         self.display_2_lcd([
