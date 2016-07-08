@@ -29,10 +29,10 @@ from RPLCD import BacklightMode
 class Watering:
     def __init__(self):
         # Watering variables
-        self.daysBetweenWatering = 4  # Number of days between one watering
-        self.startTime = [23, 00]  # [hh, mm]
-        self.durationOfWatering = 60  # in minutes
-        self.modeList = ['AUTO', 'OFF', 'ON']  # List of available modes
+        self.daysBetweenWatering = 3  # Number of days between one watering
+        self.startTime = [23, 50]  # [hh, mm]
+        self.durationOfWatering = 40  # in minutes
+        self.modeList = ['AUTO', 'MANU']  # List of available modes
         self.currentModeSelected = 0
         self.lastWatering = None  # Last date of watering
         self.ongoingWatering = False  # Is the watering on going or not
@@ -51,6 +51,7 @@ class Watering:
 
         self.HOME_MENU = 0
         self.CONFIG_MENU = 1
+        self.CONFIG_DETAILS_MENU = 2
         self.EMERGENCY_MENU = 3
         self.mainMenu = {
             0: self.display_menu_home,
@@ -147,7 +148,7 @@ class Watering:
     def start(self):
         while True:
             date_diff = datetime.datetime.today() - self.last_activity
-            if self.lcd.display_enabled and date_diff.seconds > self.time_before_switch_off:
+            if self.lcd.display_enabled and date_diff.seconds > self.time_before_switch_off and self.currentMenuSelected != self.CONFIG_DETAILS_MENU:
                 self.switch_off_lcd()
                 self.currentMenuSelected = self.HOME_MENU
             elif not self.lcd.display_enabled and date_diff.seconds < self.time_before_switch_off:
@@ -158,14 +159,8 @@ class Watering:
                 self.display_menu()
 
             # Calculates if it has to water or not
-            # If mode ON -> start watering
-            if self.modeList[self.currentModeSelected] == "ON" and not self.ongoingWatering:
-                self.start_watering()
-            # If mode OFF stop watering
-            elif self.modeList[self.currentModeSelected] == "OFF" and self.ongoingWatering:
-                self.stop_watering()
             # If mode AUTO
-            elif self.has_to_water() and not self.ongoingWatering:
+            if self.modeList[self.currentModeSelected] == "AUTO" and self.has_to_water() and not self.ongoingWatering:
                 self.start_watering()
             # Stops the watering after duration specified
             elif self.ongoingWatering and self.endWateringDate < datetime.datetime.today():
@@ -227,10 +222,12 @@ class Watering:
 
         # Changes the current mode
         elif self.configMenuSelected == self.MODE_SELECTION_CONFIG_MENU:
+            length = len(self.modeList)
+            
             if param.GPIO['btn']['up'][1] == channel:
-                self.currentModeSelected = self.currentModeSelected + 1 if self.currentModeSelected < 2 else 0
+                self.currentModeSelected = self.currentModeSelected + 1 if self.currentModeSelected < length - 1 else 0
             if param.GPIO['btn']['bottom'][1] == channel:
-                self.currentModeSelected = self.currentModeSelected - 1 if self.currentModeSelected > 0 else 2
+                self.currentModeSelected = self.currentModeSelected - 1 if self.currentModeSelected > 0 else length - 1
 
         # Change the current datetime of the OS
         elif self.configMenuSelected == self.CHANGE_DAY_DATE_CONFIG_MENU:
@@ -239,7 +236,7 @@ class Watering:
             elif param.GPIO['btn']['bottom'][1] == channel:
                 subprocess.call(["sudo", "date", "-s", "-1 day"])
 
-            self.last_activity = datetime.datetime.today()
+            subprocess.call(["sudo", "hwclock", "-w"])
 
         elif self.configMenuSelected == self.CHANGE_MONTH_DATE_CONFIG_MENU:
             if param.GPIO['btn']['up'][1] == channel:
@@ -247,7 +244,7 @@ class Watering:
             elif param.GPIO['btn']['bottom'][1] == channel:
                 subprocess.call(["sudo", "date", "-s", "-1 month"])
 
-            self.last_activity = datetime.datetime.today()
+            subprocess.call(["sudo", "hwclock", "-w"])
 
         elif self.configMenuSelected == self.CHANGE_YEAR_DATE_CONFIG_MENU:
             if param.GPIO['btn']['up'][1] == channel:
@@ -255,7 +252,7 @@ class Watering:
             elif param.GPIO['btn']['bottom'][1] == channel:
                 subprocess.call(["sudo", "date", "-s", "-1 year"])
 
-            self.last_activity = datetime.datetime.today()
+            subprocess.call(["sudo", "hwclock", "-w"])
 
         elif self.configMenuSelected == self.CHANGE_HOUR_DATE_CONFIG_MENU:
             if param.GPIO['btn']['up'][1] == channel:
@@ -263,7 +260,7 @@ class Watering:
             elif param.GPIO['btn']['bottom'][1] == channel:
                 subprocess.call(["sudo", "date", "-s", "-1 hour"])
 
-            self.last_activity = datetime.datetime.today()
+            subprocess.call(["sudo", "hwclock", "-w"])
 
         elif self.configMenuSelected == self.CHANGE_MINUTE_DATE_CONFIG_MENU:
             if param.GPIO['btn']['up'][1] == channel:
@@ -271,10 +268,11 @@ class Watering:
             elif param.GPIO['btn']['bottom'][1] == channel:
                 subprocess.call(["sudo", "date", "-s", "-1 minute"])
 
-            self.last_activity = datetime.datetime.today()
+            subprocess.call(["sudo", "hwclock", "-w"])
 
     # Stops or start the emergency
     def emergency_btn_pressed(self, channel):
+        return
         self.last_activity = datetime.datetime.today()
 
         # Stops
@@ -334,6 +332,7 @@ class Watering:
 
     # Display the menu to the LCD
     def display_2_lcd(self, lines):
+        self.lcd.cursor_mode = CursorMode.hide
         blank_line = '{:^20}'.format(' ')
 
         for key, value in enumerate(lines):
@@ -353,16 +352,14 @@ class Watering:
         line2 = '{:^20}'.format('Mode ' + self.modeList[self.currentModeSelected])
         line4 = None
 
-        # If mode is ON
-        if self.modeList[self.currentModeSelected] == "ON":
-            line3 = '! Arrosage infini ! '
-        # If mode is OFF
-        elif self.modeList[self.currentModeSelected] == "OFF":
-            line3 = 'Arrosage desactive  '
-        # If mode is AUTO
-        elif self.ongoingWatering:
+        # If watering ongoing
+        if self.ongoingWatering:
             line3 = 'Arrosage en cours   '
             line4 = '{:^20}'.format(self.end_watering_in())
+        # If mode MANU
+        elif self.modeList[self.currentModeSelected] == "MANU":
+            line3 = 'Pas d\'arro programme'
+        # If mode AUTO
         else:
             line3 = 'Proch. arro. dans:  '
             line4 = '{:^20}'.format(self.next_watering_in())
@@ -409,7 +406,7 @@ class Watering:
                     None
                 ])
 
-        time.sleep(5)
+        time.sleep(3)
         self.currentMenuSelected = self.HOME_MENU
 
     def display_menu_watering_days(self):
@@ -680,6 +677,9 @@ class Watering:
     def switch_on_lcd(self):
         self.lcd.display_enabled = True
         self.lcd.backlight_enabled = True
+        self.lcd.clear()
+        self.lcd.cursor_pos = (0, 0)
+        self.lcd.cursor_mode = CursorMode.hide
 
 
 if __name__ == '__main__':
